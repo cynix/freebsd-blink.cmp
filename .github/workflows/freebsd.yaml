@@ -1,0 +1,74 @@
+name: FreeBSD
+
+on:
+  workflow_dispatch:
+
+jobs:
+  calculate:
+    name: Get latest tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.calculate.outputs.tag }}
+    steps:
+      - id: calculate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh release list --repo=saghen/blink.cmp --limit=1 --json=tagName --jq='.[0].tagName')" >> $GITHUB_OUTPUT
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: calculate
+    strategy:
+      matrix:
+        target:
+          - arch: amd64
+            triple: x86_64-unknown-freebsd
+            cargo_args:
+
+          - arch: arm64
+            triple: aarch64-unknown-freebsd
+            cargo_args: -Z build-std
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: saghen/blink.cmp
+          ref: ${{ needs.calculate.outputs.tag }}
+
+      - name: Build
+        run: |
+          docker run --pull=always --rm -v $(pwd):/work -w /work -e BUILDER_UID=$(id -u) -e BUILDER_GID=$(id -g) -e BUILDER_USER=$(id -un) -e BUILDER_GROUP=$(id -gn) -e FREEBSD_TARGET=${{ matrix.target.arch }} ghcr.io/cynix/dockcross-freebsd env CARGO_PROFILE_RELEASE_STRIP=true cargo +nightly build --release ${{ matrix.target.cargo_args }}
+          tar -C target/${{ matrix.target.triple }}/release/ -zcf libblink_cmp_fuzzy-${{ needs.calculate.outputs.tag }}-${{ matrix.target.triple }}.tar.gz --numeric-owner --owner=0 --group=0 ./libblink_cmp_fuzzy.so
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tarballs
+          path: libblink_cmp_fuzzy-*.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [calculate, build]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: tarballs
+
+      - name: Create release
+        run: |
+          gh release delete --cleanup-tag --yes $PREVIOUS ${{ needs.calculate.outputs.tag }} || true
+          gh release create --latest=true --notes=${{ needs.calculate.outputs.tag }} --title=${{ needs.calculate.outputs.tag }} ${{ needs.calculate.outputs.tag }} ./libblink_cmp_fuzzy-*.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
