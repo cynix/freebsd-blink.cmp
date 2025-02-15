@@ -43,10 +43,10 @@ jobs:
           tar -C target/${{ matrix.target.triple }}/release/ -zcf libblink_cmp_fuzzy-${{ needs.calculate.outputs.tag }}-${{ matrix.target.triple }}.tar.gz --numeric-owner --owner=0 --group=0 ./libblink_cmp_fuzzy.so
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: tarballs
-          path: libblink_cmp_fuzzy-*.tar.gz
+          name: libblink_cmp_fuzzy-${{ needs.calculate.outputs.tag }}-${{ matrix.target.triple }}.tar.gz
+          path: libblink_cmp_fuzzy-${{ needs.calculate.outputs.tag }}-${{ matrix.target.triple }}.tar.gz
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
@@ -62,13 +62,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: tarballs
+          merge-multiple: true
 
       - name: Create release
         run: |
-          gh release delete --cleanup-tag --yes $PREVIOUS ${{ needs.calculate.outputs.tag }} || true
+          gh release delete --cleanup-tag --yes ${{ needs.calculate.outputs.tag }} || true
           gh release create --latest=true --notes=${{ needs.calculate.outputs.tag }} --title=${{ needs.calculate.outputs.tag }} ${{ needs.calculate.outputs.tag }} ./libblink_cmp_fuzzy-*.tar.gz
         env:
           GH_TOKEN: ${{ github.token }}
